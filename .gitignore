@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.parquet
+*.gz
+*.csv
+*.json
+*.png
+*.pkl
+*.log
+.env
+.venv
+.ipynb_checkpoints/
+data/
+models/
+reports/
