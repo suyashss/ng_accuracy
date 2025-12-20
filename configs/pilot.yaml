@@ -1,0 +1,20 @@
+release: "25.12"
+paths:
+  raw_dir: "data/raw"
+  interim_dir: "data/interim"
+  processed_dir: "data/processed"
+gold:
+  url: "https://raw.githubusercontent.com/opentargets/genetics-gold-standards/master/gold_standards/processed/gwas_gold_standards.191108.tsv"
+  out_path: "data/raw/gold/gwas_gold_standards.191108.tsv"
+opentargets:
+  credible_set_base_url: "https://ftp.ebi.ac.uk/pub/databases/opentargets/platform/{release}/output/credible_set/"
+  credible_set_local_dir: "data/raw/opentargets/{release}/credible_set"
+gene_gtf:
+  url: "https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_47/gencode.v47.basic.annotation.gtf.gz"
+  local_path: "data/raw/gene_annotation/gencode.v47.basic.annotation.gtf.gz"
+features:
+  gene_window_bp: 250000
+split:
+  test_size: 0.2
+  seed: 1
+  group_by_study: true
