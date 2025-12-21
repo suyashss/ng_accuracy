@@ -1,0 +1,7 @@
+pandas
+pyarrow
+duckdb
+pyyaml
+tqdm
+scikit-learn
+matplotlib
