@@ -38,6 +38,7 @@ def normalize_gold(df: pd.DataFrame) -> pd.DataFrame:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     add_config_arg(parser)
+    parser.add_argument("--include-medium", action="store_true", help="Include Medium confidence loci")
     parser.add_argument("--force", action="store_true", help="Redownload even if file exists")
     args = parser.parse_args()
 
@@ -55,7 +56,14 @@ def main() -> None:
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
 
-    norm = normalize_gold(df)
+    confidence = df.get("gold_standard_info.evidence.confidence", pd.Series([], dtype=str)).fillna("")
+    keep = confidence.isin(["High", "High|High"])
+    if args.include_medium:
+        keep = keep | confidence.eq("Medium")
+    filtered = df[keep].copy()
+    logger.info("Filtered gold rows: %d -> %d", len(df), len(filtered))
+
+    norm = normalize_gold(filtered)
     interim_path = pathlib.Path(cfg["paths"]["interim_dir"]) / "gold_normalized.parquet"
     ensure_dir(interim_path.parent)
     norm.to_parquet(interim_path, index=False)
