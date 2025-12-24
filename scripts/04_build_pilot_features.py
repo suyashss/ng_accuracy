@@ -5,6 +5,13 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if SRC.is_dir():
+    sys.path.insert(0, str(SRC))
+
 import pandas as pd
 
 from ng_accuracy.config import add_config_arg, load_config, resolve_release_path
