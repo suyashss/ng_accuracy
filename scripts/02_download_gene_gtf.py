@@ -5,6 +5,13 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if SRC.is_dir():
+    sys.path.insert(0, str(SRC))
+
 
 from ng_accuracy.config import add_config_arg, load_config
 from ng_accuracy.io_utils import download_file, ensure_dir
