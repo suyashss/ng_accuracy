@@ -53,6 +53,8 @@ def parse_gtf(gtf_gz_path: str | pathlib.Path) -> pd.DataFrame:
                 continue
             gene_name = attr_map.get("gene_name", "")
             gene_type = attr_map.get("gene_type", "")
+            if gene_type != "protein_coding":
+                continue
             start_i = int(start)
             end_i = int(end)
             gene_tss = start_i if strand == "+" else end_i

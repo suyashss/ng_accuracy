@@ -5,6 +5,13 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if SRC.is_dir():
+    sys.path.insert(0, str(SRC))
+
 import pandas as pd
 
 from ng_accuracy.config import add_config_arg, load_config, resolve_release_path
@@ -30,6 +37,7 @@ def ensure_gene_tss(cfg: dict, logger) -> pathlib.Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     add_config_arg(parser)
+    parser.add_argument("--force", action="store_true", help="Rebuild gene TSS parquet even if it exists")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -40,6 +48,9 @@ def main() -> None:
         raise FileNotFoundError(f"Missing mapped loci file {mapped_path}; run 03_map_gold_to_credible_set.py")
     mapped = pd.read_parquet(mapped_path)
 
+    genes_parquet = pathlib.Path(cfg["paths"]["interim_dir"]) / "genes_tss.parquet"
+    if args.force and genes_parquet.exists():
+        genes_parquet.unlink()
     genes_parquet = ensure_gene_tss(cfg, logger)
     genes_df = load_gene_tss(genes_parquet)
 

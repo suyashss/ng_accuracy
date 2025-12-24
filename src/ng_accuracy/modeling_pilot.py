@@ -13,6 +13,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
+    average_precision_score,
     balanced_accuracy_score,
     brier_score_loss,
     log_loss,
@@ -32,6 +33,7 @@ NUMERIC_FEATURES = [
     "cs_neglog10p",
     "cs_size",
     "cs_max_pip",
+    "cs_entropy",
 ]
 
 
@@ -55,7 +57,7 @@ def prevalence_baseline(train_y: np.ndarray) -> float:
 
 def distance_only_features(df: pd.DataFrame) -> np.ndarray:
     arr = df[["ng_dist_tss", "ng_dist_gap_1_2", "ng_gene_count_250kb"]].copy()
-    arr = arr.applymap(lambda x: np.log1p(x) if pd.notnull(x) else np.nan)
+    arr = arr.apply(np.log1p)
     return arr.to_numpy()
 
 
@@ -93,8 +95,7 @@ def evaluate_predictions(y_true: np.ndarray, y_prob: np.ndarray) -> Dict[str, fl
 
 
 def _pr_auc(y_true: np.ndarray, y_prob: np.ndarray) -> float:
-    precision, recall, _ = precision_recall_curve(y_true, y_prob)
-    return float(np.trapz(precision, recall))
+    return float(average_precision_score(y_true, y_prob))
 
 
 def plot_curves(y_true: np.ndarray, y_prob: np.ndarray, out_dir: pathlib.Path) -> None:
