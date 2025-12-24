@@ -68,37 +68,80 @@ def compute_credible_set_features(parquet_glob: str, study_locus_ids: Iterable[s
     if not ids:
         return pd.DataFrame()
     con = duckdb.connect()
+    columns = con.execute(f"DESCRIBE SELECT * FROM read_parquet('{parquet_glob}')").df()["column_name"].tolist()
+    def _select_expr(name: str, cast: str | None = None) -> str:
+        if name in columns:
+            return name
+        if cast:
+            return f"NULL::{cast} AS {name}"
+        return f"NULL AS {name}"
+
+    select_cols = [
+        _select_expr("studyLocusId"),
+        _select_expr("studyId"),
+        _select_expr("variantId"),
+        _select_expr("chromosome"),
+        _select_expr("position"),
+        _select_expr("locus"),
+        _select_expr("pValue"),
+        _select_expr("pValueMantissa"),
+        _select_expr("pValueExponent"),
+    ]
     placeholders = ", ".join(["?"] * len(ids))
     base_query = f"""
-    SELECT studyLocusId, studyId, variantId, chromosome, position, locus,
-           pValue, pValueMantissa, pValueExponent
+    SELECT {', '.join(select_cols)}
     FROM read_parquet('{parquet_glob}')
     WHERE studyLocusId IN ({placeholders})
     """
     base_df = con.execute(base_query, ids).df()
 
     cs_size = None
-    if "locus" in base_df.columns:
-        try:
-            size_df = con.execute(
-                "SELECT studyLocusId, max(list_length(locus)) AS cs_size FROM base_df GROUP BY studyLocusId"
-            ).df()
-            cs_size = size_df
-        except Exception:
-            cs_size = None
-
     cs_pip = None
+    cs_entropy = None
     if "locus" in base_df.columns:
-        try:
-            pip_query = """
-            SELECT studyLocusId, max(entry.posteriorProbability) AS cs_max_pip
-            FROM base_df
-            CROSS JOIN UNNEST(locus) AS entry
-            GROUP BY studyLocusId
-            """
-            cs_pip = con.execute(pip_query).df()
-        except Exception:
-            cs_pip = None
+        def _locus_entries(val) -> list:
+            if isinstance(val, (list, tuple, np.ndarray)):
+                return list(val)
+            return []
+
+        def _locus_size(val) -> float | None:
+            entries = _locus_entries(val)
+            return float(len(entries)) if entries else None
+
+        def _locus_max_pip(val) -> float | None:
+            entries = _locus_entries(val)
+            if not entries:
+                return None
+            pips = [entry.get("posteriorProbability") for entry in entries if isinstance(entry, dict)]
+            pips = [p for p in pips if p is not None]
+            return float(max(pips)) if pips else None
+
+        def _locus_entropy(val) -> float | None:
+            entries = _locus_entries(val)
+            if not entries:
+                return None
+            pips = [entry.get("posteriorProbability") for entry in entries if isinstance(entry, dict)]
+            pips = [p for p in pips if p is not None and p >= 0]
+            if not pips:
+                return None
+            total = float(sum(pips))
+            if total <= 0:
+                return None
+            probs = [p / total for p in pips]
+            entropy = -sum(p * math.log(p) for p in probs if p > 0)
+            return float(entropy)
+
+        size_df = base_df[["studyLocusId", "locus"]].copy()
+        size_df["cs_size"] = size_df["locus"].apply(_locus_size)
+        cs_size = size_df.groupby("studyLocusId", as_index=False)["cs_size"].max()
+
+        pip_df = base_df[["studyLocusId", "locus"]].copy()
+        pip_df["cs_max_pip"] = pip_df["locus"].apply(_locus_max_pip)
+        cs_pip = pip_df.groupby("studyLocusId", as_index=False)["cs_max_pip"].max()
+
+        ent_df = base_df[["studyLocusId", "locus"]].copy()
+        ent_df["cs_entropy"] = ent_df["locus"].apply(_locus_entropy)
+        cs_entropy = ent_df.groupby("studyLocusId", as_index=False)["cs_entropy"].max()
 
     def _compute_neglog(row: pd.Series) -> float | None:
         mantissa = row.get("pValueMantissa")
@@ -128,6 +171,10 @@ def compute_credible_set_features(parquet_glob: str, study_locus_ids: Iterable[s
         merged = merged.merge(cs_pip, on="studyLocusId", how="left")
     else:
         merged["cs_max_pip"] = np.nan
+    if cs_entropy is not None:
+        merged = merged.merge(cs_entropy, on="studyLocusId", how="left")
+    else:
+        merged["cs_entropy"] = np.nan
     con.close()
     return merged
 
@@ -135,7 +182,13 @@ def compute_credible_set_features(parquet_glob: str, study_locus_ids: Iterable[s
 def finalize_features(mapped: pd.DataFrame, nearest_df: pd.DataFrame, cs_df: pd.DataFrame) -> pd.DataFrame:
     df = mapped.merge(nearest_df, on="studyLocusId", how="left")
     df = df.merge(cs_df, on="studyLocusId", how="left", suffixes=("", "_cs"))
-    df["y"] = (df["nearestGeneId"] == df["goldGeneId"]).astype(int)
+    df["nearestGeneId_base"] = df["nearestGeneId"].str.replace(r"\.[0-9]+$", "", regex=True)
+    df["y"] = (df["nearestGeneId_base"] == df["goldGeneId"]).astype(int)
+    if "studyId" in df.columns and "variantId" in df.columns and "cs_neglog10p" in df.columns:
+        sort_key = df["cs_neglog10p"].fillna(-math.inf)
+        df = df.assign(_sort_key=sort_key)
+        df = df.sort_values(["studyId", "variantId", "_sort_key"], ascending=[True, True, False])
+        df = df.drop_duplicates(subset=["studyId", "variantId"], keep="first").drop(columns="_sort_key")
     return df
 
 
