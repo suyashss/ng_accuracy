@@ -1,0 +1,51 @@
+release: "25.12"
+paths:
+  raw_dir: "data/raw"
+  interim_dir: "data/interim"
+  processed_dir: "data/processed"
+  reports_dir: "reports"
+gold:
+  url: "https://raw.githubusercontent.com/opentargets/genetics-gold-standards/master/gold_standards/processed/gwas_gold_standards.191108.tsv"
+  include_confidence: ["High"]
+opentargets:
+  base_url: "https://ftp.ebi.ac.uk/pub/databases/opentargets/platform/{release}/output"
+  datasets:
+    - credible_set
+    - target
+    - study
+    - variant
+    - colocalisation
+    - enhancer_to_gene
+    - l2g_prediction
+  download:
+    method: "wget_or_python"
+    max_workers: 8
+nearest_gene:
+  definition: "tss_protein_coding"
+  windows_bp: [10000, 50000, 100000, 250000, 500000]
+  promoter_bp: 2000
+features:
+  credible_set:
+    pip_threshold: 0.01
+    top_k_variants: 20
+  variant:
+    enabled: true
+  colocalisation:
+    enabled: true
+  enhancer_to_gene:
+    enabled: true
+  l2g_prediction:
+    enabled: true
+splits:
+  strategy: "chrom_nested_cv"
+  seed: 1
+models:
+  train:
+    - baseline_prevalence
+    - baseline_distance_logreg
+    - logreg_full
+    - hgbt_full
+    - xgb_full
+    - baseline_l2g_score_nearest
+  calibrate: ["sigmoid"]
+  scoring_primary: "balanced_accuracy"
