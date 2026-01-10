@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import pathlib
-from typing import Dict
 
 import pandas as pd
 
@@ -44,7 +43,7 @@ def assemble_features(
     variant_feat = compute_variant_features(variant_df, nearest) if not variant_df.empty else pd.DataFrame()
     if not variant_feat.empty:
         merged = merged.merge(variant_feat, on="studyLocusId", how="left")
-    coloc_feat = compute_coloc_features(coloc_df, nearest) if not coloc_df.empty else pd.DataFrame()
+    coloc_feat = compute_coloc_features(coloc_df, nearest, study_df)
     if not coloc_feat.empty:
         merged = merged.merge(coloc_feat, on="studyLocusId", how="left")
     e2g_feat = compute_e2g_features(e2g_df, nearest) if not e2g_df.empty else pd.DataFrame()
@@ -61,9 +60,62 @@ def assemble_features(
     reports_dir.mkdir(parents=True, exist_ok=True)
     missingness = merged.isna().mean().sort_values(ascending=False)
     missingness.to_csv(reports_dir / "full_feature_missingness.csv")
+
+    coloc_cols = [
+        "coloc_max_h4_nearest_gene",
+        "coloc_nearest_vs_best_h4_ratio",
+        "coloc_nearest_vs_best_clpp_ratio",
+    ]
+    coloc_dist_summary = {}
+    for col in coloc_cols:
+        if col in merged.columns:
+            series = merged[col]
+            coloc_dist_summary[col] = {
+                "min": float(series.min(skipna=True)) if len(series) else None,
+                "median": float(series.median(skipna=True)) if len(series) else None,
+                "max": float(series.max(skipna=True)) if len(series) else None,
+                "frac_zero": float((series == 0).mean()) if len(series) else None,
+            }
+
     summary = {"num_rows": len(merged), "prevalence": float(merged["y"].mean()) if len(merged) else None}
     (reports_dir / "full_feature_summary.json").write_text(json.dumps(summary, indent=2))
+    if coloc_dist_summary:
+        (reports_dir / "coloc_feature_distribution.json").write_text(json.dumps(coloc_dist_summary, indent=2))
+
+    _write_coloc_diagnostics(merged, reports_dir)
     return merged
+
+
+def _write_coloc_diagnostics(df: pd.DataFrame, reports_dir: pathlib.Path) -> None:
+    if "coloc_status_no_pairs" not in df.columns:
+        return
+
+    status_cols = [
+        "coloc_status_no_pairs",
+        "coloc_status_pairs_no_mapped_gene",
+        "coloc_status_mapped_gene_no_nearest",
+        "coloc_status_nearest_match",
+    ]
+    lines = ["# Colocalisation diagnostics", ""]
+    total = len(df)
+    lines.append("## Status counts")
+    for col in status_cols:
+        count = int(df[col].sum())
+        pct = (count / total * 100) if total else 0
+        lines.append(f"- {col}: {count} ({pct:.2f}%)")
+
+    lines.append("")
+    if "coloc_has_any_pairs" in df.columns:
+        count_pairs = int(df["coloc_has_any_pairs"].sum())
+        count_mapped = int(df.get("coloc_has_any_mapped_qtl_gene", pd.Series()).sum())
+        count_nearest = int(df.get("coloc_nearest_gene_in_coloc", pd.Series()).sum())
+        lines.append("## Pair and mapping coverage")
+        lines.append(f"- loci with any coloc pairs: {count_pairs}")
+        lines.append(f"- loci with mapped QTL genes: {count_mapped}")
+        lines.append(f"- loci where nearest gene appears in coloc: {count_nearest}")
+
+    report_path = reports_dir / "coloc_diagnostics_full.md"
+    report_path.write_text("\n".join(lines))
 
 
 __all__ = ["assemble_features"]
