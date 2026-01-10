@@ -13,4 +13,5 @@ __pycache__/
 .ipynb_checkpoints/
 data/
 models/
-reports/
+reports/*
+!reports/coloc_diagnostics_full.md
